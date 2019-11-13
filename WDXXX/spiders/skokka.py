@@ -3,6 +3,8 @@ import scrapy
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.response import open_in_browser
 from scrapy.http import Request
+from scrapy.selector import Selector
+from urllib.parse import urljoin
 
 class SkokkaSpider(scrapy.Spider):
     name = 'skokka'
@@ -11,12 +13,18 @@ class SkokkaSpider(scrapy.Spider):
 
     #Contains all subtypes of persons (like Girls, mens, shamale, etc...)
     subtype = []
+
     #Delay between pages 
     download_delay = 0.5
+
     #Quantity of pages
     QTT_PAGE_INDEX = 1
 
-    REGION_TO_SEARCH = 'manaus'
+    #Region to scrapy
+    REGION_TO_SEARCH = ['manaus']
+
+    #START PAGE LINK
+    ADVERTISEMENT_LINK = []
 
     def start_requests(self):
         yield scrapy.Request(url=self.start_urls[0], callback=self.getSubType)
@@ -28,19 +36,35 @@ class SkokkaSpider(scrapy.Spider):
             self.subtype.append(str(genre))
 
         yield scrapy.Request(self.start_urls[0], callback=self.parse, dont_filter=True)
-
+        
     def parse(self, response):
-        for t in self.subtype:
-            for x in range(self.QTT_PAGE_INDEX):
-                baseUrl = "%s/%s/%s" % (str(self.start_urls[0]), str(t),str(self.REGION_TO_SEARCH))
-                abs_URL = str(baseUrl) + str("/?p=") + str(x+1)
+        for region in self.REGION_TO_SEARCH:
+            for t in self.subtype:
+                for x in range(self.QTT_PAGE_INDEX):
+                    baseUrl = "%s/%s/%s" % (str(self.start_urls[0]), str(t),str(region))
+                    abs_URL = str(baseUrl) + str("/?p=") + str(x+1)
 
-                yield scrapy.Request(url=abs_URL, cookies={'adult_cookie':'1'}, callback=self.getAllAdByPage, dont_filter=True)
+                    yield scrapy.Request(url=abs_URL, 
+                    callback=self.getAllAdByPage, cookies={'adult_cookie':'1'}, dont_filter=True)
+        
 
     def getAllAdByPage(self, response):
-        open_in_browser(response)
-        links = response.xpath('//*[@class="annuncio row addctt"]/div[3]/h3/a/@href').extract() 
+        hxs = Selector(response)
+
+        adLink = hxs.xpath('//*[@id="colonna-unica"]/div/div/div[2]/h3/a/@href').extract()
+
+        #Remove duplicated
+        uniqueLink = [x for i, x in enumerate(adLink) if i == adLink.index(x)]
+
+        for link in uniqueLink:
+            if link:                
+                personLink = urljoin(self.start_urls[0], link)
+                self.ADVERTISEMENT_LINK.append(personLink)
+                yield Request(url=personLink, callback=self.getInfoByPerson, cookies={'adult_cookie':'1'}, dont_filter=True)
+
+    def getInfoByPerson(self, response):
         pass
+
 
 #this type of site blocked the Scrapy default agent, it was necessary change it. 
 #I used this site to simulate my real user agent. 

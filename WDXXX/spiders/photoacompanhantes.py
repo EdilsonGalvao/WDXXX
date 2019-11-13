@@ -4,6 +4,16 @@ import os
 from urllib.parse import urljoin
 from scrapy.crawler import CrawlerProcess
 import re
+from scrapy.utils.response import open_in_browser
+
+import importlib, importlib.util
+def module_from_file(module_name, file_path):
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+strutils = module_from_file("strutils", "../spiders/Model/ResultSpider.py")
 
 class PhotoacompanhantesSpider(scrapy.Spider):
     name = 'photoacompanhantes'
@@ -17,7 +27,7 @@ class PhotoacompanhantesSpider(scrapy.Spider):
     #Quantity of pages
     QTT_PAGE_INDEX = 30
 
-    def start_requests(self):
+    def start_requests(self):        
         yield scrapy.Request(url=self.start_urls[0], callback=self.getSubType)
 
     def getSubType(self, response):
@@ -33,7 +43,7 @@ class PhotoacompanhantesSpider(scrapy.Spider):
     def parse(self, response):
         print("-------------------------")
         print("Started XXX Crawler: ")
-
+        
         for t in self.subtype:
             mid = '%s/amazonas/manaus' % str(t)
 
@@ -51,10 +61,10 @@ class PhotoacompanhantesSpider(scrapy.Spider):
         linksHref = response.xpath('//*[@class="link_anuncio"]/@href').extract()
         linksData = response.xpath('//*[@class="anuncio top_off"]/@data-src').extract()
 
-            #Join both list
+        #Join both list
         links = linksHref + linksData
 
-            #Remove duplicated
+        #Remove duplicated
         uniqueLink = [x for i, x in enumerate(links) if i == links.index(x)]
 
         for link in uniqueLink:                
@@ -64,43 +74,35 @@ class PhotoacompanhantesSpider(scrapy.Spider):
         print("Looking Ads on: "+ response.url)
 
     def getInfoByPerson(self, response):
+        open_in_browser(response)
+        r = strutils.resultSpider()
+
         #Name of Person
-        name = self.validateParameter(response.xpath('//*[@id="anuncio_nombre"]/text()').get())
+        r.name = self.validateParameter(response.xpath('//*[@id="anuncio_nombre"]/text()').get())
 
         #Whatsapp Number
-        wpp = ''.join(re.findall('\d+', self.validateParameter(response.xpath('//*[@id="anuncio_telefono"]/span/@data-telefono').get())))
+        r.mobileChat = ''.join(re.findall('\d+', self.validateParameter(response.xpath('//*[@id="anuncio_telefono"]/span/@data-telefono').get())))
 
         #Other Number (Tradicional phone number)
-        moboNumber = ''.join(re.findall('\d+', str(self.validateParameter(response.xpath('//*[@class="boton_texto"]/text()').get()))))
-        if not wpp:
-            wpp = moboNumber
+        r.phone = ''.join(re.findall('\d+', str(self.validateParameter(response.xpath('//*[@class="boton_texto"]/text()').get()))))
+        if not r.mobileChat:
+            r.mobileChat = r.phone
 
         #Profile Image on Website
-        img = self.validateParameter(response.xpath('//*[@id="anuncio_imagen_portada"]/@src').get())
+        r.img = self.validateParameter(response.xpath('//*[@id="anuncio_imagen_portada"]/@src').get())
 
         #City or State
-        region = self.validateParameter(response.xpath('//*[@id="anuncio_poblacion"]/text()').get())
+        r.region = self.validateParameter(response.xpath('//*[@id="anuncio_poblacion"]/text()').get())
 
         #Age formatted as a number
-        age = ''.join(re.findall('\d+', str(self.validateParameter(response.xpath('//*[@id="anuncio_edad"]/text()').get()))))
+        r.age = ''.join(re.findall('\d+', str(self.validateParameter(response.xpath('//*[@id="anuncio_edad"]/text()').get()))))
 
         #Google CSV Contact format 
-        genre = "travestis" if "travestis" in response.url else "acompanhantes"
-        details = ''
-        vcf = self.Parser2VCF(self, name, wpp, details, response.url, genre)
+        r.genre = "travestis" if "travestis" in response.url else "acompanhantes"
+        r.details = ''
+        r.vcf = self.Parser2VCF(self, r.name, r.mobileChat, r.adConetnt, response.url, r.genre)
 
-        yield {
-            'name': name,
-            'phone': moboNumber,
-            'whatsApp': wpp,
-            'age': age,
-            'region': region,
-            'img': img,
-            'url': response.url,
-            'vcf': vcf,
-            'from' : self.name,
-            'category' : genre
-        }
+        yield r
 
     def Parser2VCF(self, name, number, details, fromwebsite, genre):
 
